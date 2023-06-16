@@ -1,0 +1,147 @@
+version: '3.7'
+services:
+  postgres-event-management:
+    container_name: postgres-event-management
+    image: postgres
+    environment:
+      POSTGRES_DB: event-management
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      PGDATA: /data/postgres
+    expose:
+      - "5431"
+    ports:
+      - "5431:5431"
+    command: -p 5431
+    restart: always
+
+  postgres-event-user:
+    container_name: postgres-event-user
+    image: postgres
+    environment:
+      POSTGRES_DB: event-user
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123
+      PGDATA: /data/postgres
+    ports:
+      - "5432:5432"
+    restart: always
+
+  mongo:
+    container_name: mongo
+    image: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    expose:
+      - "27017"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: broker
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  discovery-server:
+    image: yagizpancak/discovery-server:latest
+    hostname: discovery-server
+    container_name: discovery-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+
+  api-gateway:
+    image: yagizpancak/api-gateway:latest
+    container_name: api-gateway
+    ports:
+      - "8443:8443"
+    expose:
+      - "8443"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - discovery-server
+
+  event-management-service:
+    container_name: event-management-service
+    image: yagizpancak/event-management-service:latest
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-event-management:5431/event-management
+    depends_on:
+      - postgres-event-management
+      - discovery-server
+      - api-gateway
+      - broker
+    volumes:
+      - eventImg:/img/event
+
+  user-service:
+    container_name: user-service
+    image: yagizpancak/user-service:latest
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-event-user:5432/event-user
+    depends_on:
+      - postgres-event-user
+      - discovery-server
+      - api-gateway
+      - broker
+    volumes:
+      - userImg:/img/profile
+
+  event-feed-service:
+    container_name: event-feed-service
+    image: yagizpancak/event-feed-service:latest
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - mongo
+      - discovery-server
+      - api-gateway
+      - broker
+
+  event-registration-service:
+    container_name: event-registration-service
+    image: yagizpancak/event-registration-service:latest
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - mongo
+      - discovery-server
+      - api-gateway
+      - broker
+
+  post-service:
+    container_name: post-service
+    image: yagizpancak/post-service:latest
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - mongo
+      - discovery-server
+      - api-gateway
+      - broker
+
+volumes:
+  userImg:
+  eventImg:
